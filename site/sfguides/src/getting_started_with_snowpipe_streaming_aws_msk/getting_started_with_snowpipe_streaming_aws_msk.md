@@ -124,6 +124,7 @@ Further scroll down to `Linux shell profile` section, and type in `/bin/bash` be
 
 ![](assets/session-mgr-1.2.png)
 
+
 #### 3. Connect to the Linux EC2 instance console
 Now go back to the `Session` tab and click the `Start session` button.
 ![](assets/session-mgr-2.png)
@@ -332,6 +333,17 @@ GRANT USAGE ON WAREHOUSE IDENTIFIER($WH) TO ROLE IDENTIFIER($ROLE);
 ALTER USER IDENTIFIER($USER) SET DEFAULT_ROLE=$ROLE;
 ALTER USER IDENTIFIER($USER) SET DEFAULT_WAREHOUSE=$WH;
 
+
+-- RUN FOLLOWING COMMANDS TO FIND YOUR ACCOUNT IDENTIFIER, COPY IT DOWN FOR USE LATER
+-- IT WILL BE SOMETHING LIKE <organization_name>-<account_name>
+-- e.g. ykmxgak-wyb52636
+
+WITH HOSTLIST AS 
+(SELECT * FROM TABLE(FLATTEN(INPUT => PARSE_JSON(SYSTEM$allowlist()))))
+SELECT REPLACE(VALUE:host,'.snowflakecomputing.com','') AS ACCOUNT_IDENTIFIER
+FROM HOSTLIST
+WHERE VALUE:type = 'SNOWFLAKE_DEPLOYMENT_REGIONLESS';
+
 ```
 Next we need to configure the public key for the streaming user to access Snowflake programmatically.
 
@@ -381,7 +393,7 @@ echo "export SNOWSQL_PRIVATE_KEY_PASSPHRASE=$SNOWSQL_PRIVATE_KEY_PASSPHRASE" >> 
 
 Now you can execute this command to interact with Snowflake:
 ```commandline
-$HOME/bin/snowsql -a <Snowflake Account Name> --region <AWS region where Snowflake is located> -u streaming_user --private-key-path $HOME/rsa_key.p8 -d msk_streaming_db -s msk_streaming_schema
+$HOME/bin/snowsql -a <Snowflake Account Identifier> -u streaming_user --private-key-path $HOME/rsa_key.p8 -d msk_streaming_db -s msk_streaming_schema
 ```
 See below example screenshot:
 
@@ -406,29 +418,11 @@ cat << EOF > /tmp/get_params
 a=''
 until [ ! -z \$a ]
 do
- read -p "Input Snowflake account URL: e.g. gwa123456 ==> " a
+ read -p "Input Snowflake account identifier: e.g. ylmxgak-wyb53646 ==> " a
 done
 
-r=''
-until  [ ! -z \$r ]
-do
-  read -p "Input Snowflake account region: e.g. us-west-2 ==> " r
-done
-
-if [[ \$r == "us-west-2" ]]
-then
-  echo export clstr_url=\$a.snowflakecomputing.com > $outf
-  export clstr_url=\$a.snowflakecomputing.com
-else
-  if [[ \$r == "us-east-1" ]] || [[ \$r == "eu-west-1" ]] || [[ \$r == "eu-central-1" ]] || [[ \$r == "ap-southeast-1" ]] || [[ \$r == "ap-southeast-2" ]]
-  then
-     echo export clstr_url=\$a.\$r.snowflakecomputing.com > $outf
-     export clstr_url=\$a.\$r.snowflakecomputing.com
-  else
-     echo export clstr_url=\$a.\$r.aws.snowflakecomputing.com > $outf
-     export clstr_url=\$a.\$r.aws.snowflakecomputing.com
-  fi
-fi
+echo export clstr_url=\$a.snowflakecomputing.com > $outf
+export clstr_url=\$a.snowflakecomputing.com
 
 read -p "Snowflake cluster user name: default: streaming_user ==> " user
 if [[ \$user == "" ]]
@@ -556,10 +550,10 @@ You should see there are two columns in the table: `RECORD_METADATA` and `RECORD
 The `RECORD_CONTENT` column is an JSON array that needs to be flattened.
 
 #### 2. Flatten the raw JSON data
-Now execute the following SQL commands to flatten the raw JSONs and create a materialized view with multiple columns based on the key names.
+Now execute the following SQL commands to flatten the raw JSONs and create a view with multiple columns based on the key names.
 
 ```commandline
-create or replace materialized view flights_vw
+create or replace view flights_vw
   as select
     f.value:utc::timestamp_ntz ts_utc,
     CONVERT_TIMEZONE('UTC','America/Los_Angeles',ts_utc::timestamp_ntz) as ts_pt,
@@ -607,7 +601,7 @@ do
 done
 
 ```
-You can now go back to the Snowflake worksheet to run a `select count(1) from flights_vw` query every 30 seconds to verify that the row counts is indeed increasing.
+You can now go back to the Snowflake worksheet to run a `select count(1) from flights_vw` query every 10 seconds to verify that the row counts is indeed increasing.
 
 <!----------------------------->
 ## Cleanup
@@ -640,7 +634,8 @@ Duration: 5
 
 In this lab, we built a demo to show how to ingest time-series data using Snowpipe streaming and Kafka with low latency. We demonstrated this using a self-managed Kafka 
 connector on an EC2 instance. However, for a production environment, we recommend using [Amazon MSK Connect](https://aws.amazon.com/msk/features/msk-connect/), which offers 
-scalability and resilience through the AWS infrastructure.
+scalability and resilience through the AWS infrastructure. Alternatively, if you have infrastructure supported by either [Amazon EKS](https://aws.amazon.com/eks/) or
+[Amazon ECS](https://aws.amazon.com/ecs/), you can use them to host your containerized Kafka connectors as well.
 
 Related Resources
 
